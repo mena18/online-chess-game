@@ -1,0 +1,311 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat Room</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css"
+      integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU"
+      crossorigin="anonymous"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* Add some simple styles for the loader */
+      #loader {
+        display: none;
+      }
+      #chat-interface,
+      #messages,
+      #history {
+        overflow: scroll;
+      }
+      #messages {
+        max-height: 300px;
+        min-height: 300px;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 flex justify-center items-center h-screen">
+    <!-- Loader that shows "Waiting for player to join" -->
+    <div id="loader" class="text-lg text-gray-600 text-center">
+      Waiting for player to join...
+    </div>
+
+    <div
+      class="flex flex-col md:flex-row w-full max-w-6xl mx-auto p-4 bg-white rounded-lg shadow-lg"
+    >
+      <!-- Chessboard Section -->
+      <div
+        id="board"
+        class="flex-grow flex justify-center items-center border-2 border-gray-300 rounded-lg p-4"
+      >
+        <div id="board" class="w-256 h-256"></div>
+        <!-- Increase width and height -->
+      </div>
+
+      <!-- Right Side: Move History and Chat -->
+      <div class="flex flex-col w-full md:w-1/2 md:ml-4">
+        <!-- Move History Section -->
+        <div
+          id="history"
+          class="bg-gray-50 p-4 rounded-lg shadow-md mb-4 flex-grow overflow-y-auto h-96"
+        >
+          <!-- Scrollable with fixed height -->
+          <h2 class="text-lg font-semibold mb-2">Move History</h2>
+          <div class="grid grid-cols-2 gap-2"></div>
+        </div>
+
+        <!-- Chat Interface Section -->
+        <div class="mb-4 flex justify-between items-center">
+          <div id="white-timer" class="text-gray-800">White: 10:00</div>
+          <div id="black-timer" class="text-gray-800">Black: 10:00</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Room name for WebSocket -->
+    {{ room_name|json_script:"room-name" }}
+
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+
+    <script
+      src="https://code.jquery.com/jquery-3.5.1.min.js"
+      integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2"
+      crossorigin="anonymous"
+    ></script>
+
+    <script
+      src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"
+      integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- Chess.js for FEN parsing and chess logic -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <script>
+      const pieceThemePath = "{% static 'img/chesspieces/' %}";
+      let personalColor = "";
+      const whiteSquareGrey = "#a9a9a9";
+      const blackSquareGrey = "#696969";
+      let game_working = true;
+
+      let whiteTime = 600; // 5 minutes in seconds
+      let blackTime = 600; // 5 minutes in seconds
+      let timerInterval = null;
+      let currentPlayer = "white";
+
+      const whiteTimerElem = document.getElementById("white-timer");
+      const blackTimerElem = document.getElementById("black-timer");
+
+      function startTimer() {
+        if (timerInterval) return;
+
+        timerInterval = setInterval(() => {
+          if (currentPlayer === "white") {
+            whiteTime--;
+            updateTimer(whiteTimerElem, whiteTime);
+          } else {
+            blackTime--;
+            updateTimer(blackTimerElem, blackTime);
+          }
+
+          // Stop the game if time runs out
+          if (whiteTime <= 0 || blackTime <= 0) {
+            clearInterval(timerInterval);
+            alert("Time's up! Game over.");
+            chess.game_over();
+          }
+        }, 1000);
+      }
+
+      function updateTimer(elem, time) {
+        const minutes = Math.floor(time / 60);
+        const seconds = time % 60;
+        elem.textContent = `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+      }
+
+      // ** Change Player Timer after Each Move **
+      function switchPlayer() {
+        currentPlayer = currentPlayer === "white" ? "black" : "white";
+      }
+
+      var chess = new Chess();
+      const cfg = {
+        draggable: true,
+        position: "start",
+        onDrop: handleDrop,
+        onDragStart: handleDragStart,
+        onMouseoverSquare: handleMouseoverSquare,
+        onMouseoutSquare: handleMouseoutSquare,
+        pieceTheme: `${pieceThemePath}{piece}.png`, // Adjust the path as necessary
+      };
+
+      function greySquare(square) {
+        const $square = $("#board .square-" + square);
+
+        let background = whiteSquareGrey;
+        if ($square.hasClass("black-3c85d")) {
+          background = blackSquareGrey;
+        }
+
+        $square.css("background", background);
+      }
+
+      function handleMouseoverSquare(square, piece) {
+        // get list of possible moves for this square
+        const moves = chess.moves({
+          square: square,
+          verbose: true,
+        });
+
+        // exit if there are no moves available for this square
+        if (moves.length === 0) return;
+
+        // highlight the square they moused over
+        greySquare(square);
+
+        // highlight the possible squares for this piece
+        for (var i = 0; i < moves.length; i++) {
+          greySquare(moves[i].to);
+        }
+      }
+
+      function handleMouseoutSquare(square, piece) {
+        $("#board .square-55d63").css("background", "");
+      }
+
+      var board = Chessboard("board", cfg);
+
+      function handleDrop(source, target, piece, newPos, oldPos, orientation) {
+        $("#board .square-55d63").css("background", "");
+
+        const move = chess.move({ from: source, to: target, promotion: "q" });
+        if (move === null) {
+          return "snapback";
+        }
+
+        addChessHistory();
+
+        if (!timerInterval && move.color === "w") {
+          startTimer();
+        }
+
+        if (chess.game_over()) {
+          clearInterval(timerInterval);
+          Toastify({
+            text: "Game Over", // The message from the server (e.g., "Player joined!")
+            duration: 5000, // Display for 3 seconds
+            gravity: "bottom", // Position at the top of the page
+            position: "center", // Align to the right
+            //backgroundColor: "linear-gradient(to right, #00b09b, #96c93d)", // Custom style
+          }).showToast();
+        }
+        switchPlayer();
+        MakeComputerMove();
+
+        return true;
+      }
+
+      function addChessHistory() {
+        const historyContainer = document.getElementById("history");
+        historyContainer.innerHTML = ""; // Clear the existing history
+
+        // Get the history of moves from the chess object
+        const history = chess.history();
+
+        // Create a document fragment to optimize performance
+        const fragment = document.createDocumentFragment();
+
+        // Loop through the history and format the moves
+        for (let i = 0; i < history.length; i += 2) {
+          const moveRow = document.createElement("div");
+          moveRow.classList.add("grid", "grid-cols-2", "gap-2", "mt-2"); // Tailwind CSS classes for grid layout
+          const num = Math.floor(i / 2) + 1;
+          // Create the first move cell
+          const firstMove = document.createElement("div");
+          firstMove.classList.add("bg-blue-100", "p-2", "rounded-lg");
+          firstMove.textContent = `${num}. ${history[i]}`; // Add move text
+
+          // Append the first move to the row
+          moveRow.appendChild(firstMove);
+
+          // Create the second move cell if it exists
+          if (i + 1 < history.length) {
+            const secondMove = document.createElement("div");
+            secondMove.classList.add("bg-blue-100", "p-2", "rounded-lg");
+            secondMove.textContent = `${num}. ${history[i + 1]}`; // Add move text
+            moveRow.appendChild(secondMove);
+          }
+
+          // Append the row to the fragment
+          fragment.appendChild(moveRow);
+        }
+
+        // Append the fragment to the history container
+        historyContainer.appendChild(fragment);
+      }
+
+      function handleDragStart(source, piece, position, orientation) {
+        if (chess.game_over()) {
+          return false;
+        }
+
+        if (
+          (orientation === "white" && piece.search(/^w/) === -1) ||
+          (orientation === "black" && piece.search(/^b/) === -1)
+        ) {
+          return false;
+        }
+      }
+
+      async function get_best_move_from_fen(fen) {
+        try {
+          const fenEncoded = encodeURIComponent(fen);
+
+          const response = await fetch(
+            `/AiGame/Strong/best_move/?fen=${fenEncoded}/`
+          );
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          const data = await response.json();
+          console.log("Best move:", data); // This will log the best move to the console
+
+          // You can now use the data to update the chessboard
+          const source = data.source; // e.g., 'e2'
+          const target = data.target; // e.g., 'e4'
+
+          // Example: make the move on the chessboard
+          return data;
+        } catch (error) {
+          console.error("There was a problem with the fetch operation:", error);
+        }
+      }
+
+      async function MakeComputerMove() {
+        const data = await get_best_move_from_fen(chess.fen());
+
+        chess.move({
+          from: data["source"],
+          to: data["target"],
+          promotion: "q",
+        });
+        board.position(chess.fen());
+        addChessHistory();
+        switchPlayer();
+      }
+    </script>
+  </body>
+</html>

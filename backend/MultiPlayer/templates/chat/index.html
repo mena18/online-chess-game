@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat Rooms</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="text-center">
+      <h1 class="text-4xl font-bold text-gray-800 mb-6">
+        Welcome to Chess Rooms
+      </h1>
+
+      <!-- Button to play against the computer -->
+      <button
+        id="play-computer"
+        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg mb-4"
+      >
+        Play Against Computer
+      </button>
+
+      <!-- Button to create a new room with a random name -->
+      <button
+        id="create-room"
+        class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg mb-4"
+      >
+        Create Room
+      </button>
+
+      <!-- Input and button to join an existing room -->
+      <div class="mt-4">
+        <label
+          for="room-name-input"
+          class="block text-gray-700 font-semibold mb-2"
+          >Enter Room Name:</label
+        >
+        <input
+          id="room-name-input"
+          type="text"
+          size="50"
+          class="border border-gray-300 rounded-lg p-2 w-full max-w-md mb-2"
+        />
+        <button
+          id="room-name-submit"
+          class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg"
+        >
+          Join Room
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal dialog for choosing AI options -->
+    <div
+      id="ai-modal"
+      class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center hidden"
+    >
+      <div class="bg-white rounded-lg p-6 w-80 shadow-lg">
+        <h2 class="text-2xl font-bold text-gray-800 mb-4">Play Against AI</h2>
+        <div class="flex flex-col space-y-4">
+          <a
+            href="/AiGame/Weak/"
+            class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-center"
+            >Play Against Random Computer</a
+          >
+          <a
+            href="/AiGame/Strong/"
+            class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg text-center"
+            >Play Against Strong AI</a
+          >
+        </div>
+        <button id="close-modal" class="mt-4 text-gray-600 hover:text-gray-900">
+          Close
+        </button>
+      </div>
+    </div>
+
+    <script>
+      // Function to generate a random 10-letter room name
+      function generateRandomRoomName() {
+        var characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        var roomName = "";
+        for (var i = 0; i < 10; i++) {
+          roomName += characters.charAt(
+            Math.floor(Math.random() * characters.length)
+          );
+        }
+        return roomName;
+      }
+
+      // Create room button click handler
+      document.querySelector("#create-room").onclick = function () {
+        var randomRoomName = generateRandomRoomName();
+        // Redirect to the randomly generated room
+        window.location.pathname = "/multiPlayer/" + randomRoomName + "/";
+      };
+
+      // Join room button click handler
+      document.querySelector("#room-name-submit").onclick = function () {
+        var roomName = document.querySelector("#room-name-input").value;
+        if (roomName.trim()) {
+          // Redirect to the user-entered room
+          window.location.pathname = "/multiPlayer/" + roomName + "/";
+        } else {
+          alert("Please enter a valid room name.");
+        }
+      };
+
+      // Play against computer button click handler
+      document.querySelector("#play-computer").onclick = function () {
+        // Show the AI options modal
+        document.getElementById("ai-modal").classList.remove("hidden");
+      };
+
+      // Close modal button click handler
+      document.querySelector("#close-modal").onclick = function () {
+        // Hide the AI options modal
+        document.getElementById("ai-modal").classList.add("hidden");
+      };
+
+      // Focus on the room input field by default
+      document.querySelector("#room-name-input").focus();
+
+      // Allow the 'Enter' key to submit the room name
+      document.querySelector("#room-name-input").onkeyup = function (e) {
+        if (e.key === "Enter") {
+          document.querySelector("#room-name-submit").click();
+        }
+      };
+    </script>
+  </body>
+</html>

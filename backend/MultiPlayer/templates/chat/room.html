@@ -1,0 +1,570 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat Room</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css"
+      integrity="sha384-q94+BZtLrkL1/ohfjR8c6L+A6qzNH9R2hBLwyoAfu3i/WCvQjzL2RQJ3uNHDISdU"
+      crossorigin="anonymous"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* Add some simple styles for the loader */
+      #loader {
+        display: none;
+      }
+      #chat-interface,
+      #messages,
+      #history {
+        overflow: scroll;
+      }
+      #messages {
+        max-height: 300px;
+        min-height: 300px;
+      }
+      .timer-container {
+        display: flex;
+        align-items: center;
+        padding: 10px 15px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        font-family: "Arial", sans-serif;
+      }
+
+      .white-timer {
+        background-color: black;
+        color: white;
+      }
+
+      .black-timer {
+        background-color: #333; /* A darker shade for contrast */
+        color: white;
+      }
+
+      .timer-label {
+        font-weight: bold;
+        margin-right: 8px; /* Space between the label and timer value */
+      }
+
+      .timer-value {
+        font-size: 1.5em; /* Increase the size of the timer value for emphasis */
+      }
+
+      /* Optional: Add some responsive design */
+      @media (max-width: 600px) {
+        .timer-container {
+          flex-direction: column; /* Stack labels and timers vertically on small screens */
+          align-items: flex-start; /* Align to the left */
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 flex justify-center items-center h-screen">
+    <!-- Loader that shows "Waiting for player to join" -->
+    <div
+      id="loader-dialog"
+      class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50"
+    >
+      <div
+        class="bg-white rounded-lg shadow-lg p-6 max-w-md w-full text-center"
+      >
+        <h2 class="text-xl font-bold mb-4">
+          Send This Link to Your Friend to Join
+        </h2>
+
+        <!-- Display the current URL as the link -->
+        <div class="bg-gray-100 border border-gray-300 rounded p-2 mb-4">
+          <input
+            id="game-link"
+            type="text"
+            class="w-full bg-transparent outline-none"
+            readonly
+            value=""
+          />
+        </div>
+
+        <!-- Button to copy the link -->
+        <button
+          id="copy-link-btn"
+          class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-4"
+        >
+          Copy Link
+        </button>
+
+        <!-- Display just the room code (extract from the URL) -->
+        <div>
+          <p class="mb-2">Or share this code:</p>
+          <div class="bg-gray-100 border border-gray-300 rounded p-2">
+            <span id="room-code" class="font-mono"></span>
+          </div>
+        </div>
+
+        <!-- Button to copy the room code -->
+        <button
+          id="copy-code-btn"
+          class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mt-4"
+        >
+          Copy Code
+        </button>
+      </div>
+    </div>
+
+    <div
+      class="flex flex-col md:flex-row w-full max-w-6xl mx-auto p-4 bg-white rounded-lg shadow-lg"
+    >
+      <!-- Chessboard Section -->
+      <div
+        id="board"
+        class="flex-grow flex justify-center items-center border-2 border-gray-300 rounded-lg p-4"
+      >
+        <div id="board" class="w-256 h-256"></div>
+        <!-- Increase width and height -->
+      </div>
+
+      <!-- Right Side: Move History and Chat -->
+      <div class="flex flex-col w-full md:w-1/2 md:ml-4">
+        <!-- Move History Section -->
+        <div
+          id="history"
+          class="bg-gray-50 p-4 rounded-lg shadow-md mb-4 flex-grow overflow-y-auto h-96"
+        >
+          <!-- Scrollable with fixed height -->
+          <h2 class="text-lg font-semibold mb-2">Move History</h2>
+          <div class="grid grid-cols-2 gap-2"></div>
+        </div>
+
+        <!-- Chat Interface Section -->
+        <div
+          id="chat-interface"
+          class="flex flex-col h-full bg-gray-50 p-4 rounded-lg shadow-md"
+        >
+          <div class="flex-grow overflow-y-auto">
+            <div id="messages" class="flex flex-col space-y-2"></div>
+          </div>
+          <div class="flex mt-2">
+            <input
+              id="chat-message-input"
+              type="text"
+              class="border border-gray-300 rounded-lg p-2 flex-grow"
+              placeholder="Type your message..."
+            />
+            <input
+              id="chat-message-submit"
+              type="button"
+              value="Send"
+              class="bg-blue-500 text-white rounded-lg px-4 ml-2"
+            />
+          </div>
+        </div>
+
+        <div class="mb-4 flex justify-between items-center">
+          <div class="timer-container white-timer">
+            <span class="timer-label">White:</span>
+            <span id="white-timer" class="timer-value">10:00</span>
+          </div>
+          <div class="timer-container black-timer">
+            <span class="timer-label">Black:</span>
+            <span id="black-timer" class="timer-value">10:00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Room name for WebSocket -->
+    {{ room_name|json_script:"room-name" }}
+
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+
+    <script
+      src="https://code.jquery.com/jquery-3.5.1.min.js"
+      integrity="sha384-ZvpUoO/+PpLXR1lu4jmpXWu80pZlYUAfxl5NsBMWOEPSjUn/6Z/hRTt8+pR6L4N2"
+      crossorigin="anonymous"
+    ></script>
+
+    <script
+      src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"
+      integrity="sha384-8Vi8VHwn3vjQ9eUHUxex3JSN/NFqUg3QbPyX8kWyb93+8AC/pPWTzj+nHtbC5bxD"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- Chess.js for FEN parsing and chess logic -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <script>
+      const pieceThemePath = "{% static 'img/chesspieces/' %}";
+      let personalColor = "";
+      const whiteSquareGrey = "#a9a9a9";
+      const blackSquareGrey = "#696969";
+      let game_working = true;
+
+      let whiteTime = 600; // 5 minutes in seconds
+      let blackTime = 600; // 5 minutes in seconds
+      let timerInterval = null;
+      let currentPlayer = "white";
+
+      const whiteTimerElem = document.getElementById("white-timer");
+      const blackTimerElem = document.getElementById("black-timer");
+
+      function startTimer() {
+        if (timerInterval) return;
+
+        timerInterval = setInterval(() => {
+          if (currentPlayer === "white") {
+            whiteTime--;
+            updateTimer(whiteTimerElem, whiteTime);
+          } else {
+            blackTime--;
+            updateTimer(blackTimerElem, blackTime);
+          }
+
+          // Stop the game if time runs out
+          if (whiteTime <= 0 || blackTime <= 0) {
+            clearInterval(timerInterval);
+            alert("Time's up! Game over.");
+            chess.game_over();
+          }
+        }, 1000);
+      }
+
+      function updateTimer(elem, time) {
+        const minutes = Math.floor(time / 60);
+        const seconds = time % 60;
+        elem.textContent = `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+      }
+
+      // ** Change Player Timer after Each Move **
+      function switchPlayer() {
+        currentPlayer = currentPlayer === "white" ? "black" : "white";
+      }
+
+      var chess = new Chess();
+      const cfg = {
+        draggable: true,
+        position: "start",
+        onDrop: handleDrop,
+        onDragStart: handleDragStart,
+        onMouseoverSquare: handleMouseoverSquare,
+        onMouseoutSquare: handleMouseoutSquare,
+        pieceTheme: `${pieceThemePath}{piece}.png`, // Adjust the path as necessary
+      };
+
+      document.addEventListener("DOMContentLoaded", function () {
+        // Get the current link and the room code from the URL
+        const currentUrl = window.location.href;
+        const roomCode = currentUrl.split("/").pop(); // Extract the last part of the URL as room code
+
+        // Set the link and room code in the dialog
+        document.getElementById("game-link").value = currentUrl;
+        document.getElementById("room-code").textContent = roomCode;
+
+        // Copy link button functionality
+        document
+          .getElementById("copy-link-btn")
+          .addEventListener("click", function () {
+            const linkInput = document.getElementById("game-link");
+            linkInput.select();
+            linkInput.setSelectionRange(0, 99999); // For mobile devices
+            document.execCommand("copy");
+            alert("Link copied to clipboard!");
+          });
+
+        // Copy room code button functionality
+        document
+          .getElementById("copy-code-btn")
+          .addEventListener("click", function () {
+            const code = roomCode;
+            navigator.clipboard.writeText(code).then(function () {
+              alert("Room code copied to clipboard!");
+            });
+          });
+      });
+
+      // Function to start the game and hide the dialog
+      function startGame() {
+        const loaderDialog = document.getElementById("loader-dialog");
+        loaderDialog.style.display = "none";
+      }
+
+      function greySquare(square) {
+        const $square = $("#board .square-" + square);
+
+        let background = whiteSquareGrey;
+        if ($square.hasClass("black-3c85d")) {
+          background = blackSquareGrey;
+        }
+
+        $square.css("background", background);
+      }
+
+      function handleMouseoverSquare(square, piece) {
+        // get list of possible moves for this square
+        const moves = chess.moves({
+          square: square,
+          verbose: true,
+        });
+
+        // exit if there are no moves available for this square
+        if (moves.length === 0) return;
+
+        // highlight the square they moused over
+        greySquare(square);
+
+        // highlight the possible squares for this piece
+        for (var i = 0; i < moves.length; i++) {
+          greySquare(moves[i].to);
+        }
+      }
+
+      function handleMouseoutSquare(square, piece) {
+        $("#board .square-55d63").css("background", "");
+      }
+
+      var board = Chessboard("board", cfg);
+
+      function isPromotion(move) {
+        return move.promotion === "q";
+      }
+
+      function handleDrop(source, target, piece, newPos, oldPos, orientation) {
+        $("#board .square-55d63").css("background", "");
+
+        const move = chess.move({ from: source, to: target, promotion: "q" });
+        if (move === null) {
+          Toastify({
+            text: "invalid move", // The message from the server (e.g., "Player joined!")
+            duration: 3000, // Display for 3 seconds
+            gravity: "bottom", // Position at the top of the page
+            position: "right", // Align to the right
+            //backgroundColor: "linear-gradient(to right, #00b09b, #96c93d)", // Custom style
+          }).showToast();
+          return "snapback";
+        }
+
+        if (isPromotion(move)) {
+          board.position(chess.fen());
+        }
+        if (!timerInterval && move.color === "w") {
+          startTimer();
+        }
+
+        chatSocket.send(
+          JSON.stringify({
+            type: "multi.game.make.move",
+            body: {
+              source: source,
+              target: target,
+            },
+          })
+        );
+        switchPlayer();
+        addChessHistory();
+
+        if (chess.game_over()) {
+          clearInterval(timerInterval);
+          chatSocket.send(
+            JSON.stringify({
+              type: "multi.game.over",
+              body: `${personalColor} Won the game`,
+            })
+          );
+        }
+
+        return true;
+      }
+
+      function addChatMessage(message) {
+        const messagesContainer = document.getElementById("messages");
+
+        // Create a new message div
+        const messageDiv = document.createElement("div");
+
+        // Check the sender and set the styles accordingly
+        if (message.owner === true) {
+          messageDiv.classList.add("flex", "justify-start");
+          messageDiv.innerHTML = `
+                <div class="bg-blue-500 text-white p-2 rounded-lg max-w-xs">
+                    ${message.message}
+                </div>
+            `;
+        } else {
+          messageDiv.classList.add("flex", "justify-end");
+          messageDiv.innerHTML = `
+                <div class="bg-green-500 text-white p-2 rounded-lg max-w-xs">
+                    ${message.message}
+                </div>
+            `;
+        }
+
+        // Append the new message div to the messages container
+        messagesContainer.appendChild(messageDiv);
+
+        // Scroll to the bottom of the messages container
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+
+      function addChessHistory() {
+        const historyContainer = document.getElementById("history");
+        historyContainer.innerHTML = ""; // Clear the existing history
+
+        // Get the history of moves from the chess object
+        const history = chess.history();
+
+        // Create a document fragment to optimize performance
+        const fragment = document.createDocumentFragment();
+
+        // Loop through the history and format the moves
+        for (let i = 0; i < history.length; i += 2) {
+          const moveRow = document.createElement("div");
+          moveRow.classList.add("grid", "grid-cols-2", "gap-2", "mt-2"); // Tailwind CSS classes for grid layout
+          const num = Math.floor(i / 2) + 1;
+          // Create the first move cell
+          const firstMove = document.createElement("div");
+          firstMove.classList.add("bg-blue-100", "p-2", "rounded-lg");
+          firstMove.textContent = `${num}. ${history[i]}`; // Add move text
+
+          // Append the first move to the row
+          moveRow.appendChild(firstMove);
+
+          // Create the second move cell if it exists
+          if (i + 1 < history.length) {
+            const secondMove = document.createElement("div");
+            secondMove.classList.add("bg-blue-100", "p-2", "rounded-lg");
+            secondMove.textContent = `${num}. ${history[i + 1]}`; // Add move text
+            moveRow.appendChild(secondMove);
+          }
+
+          // Append the row to the fragment
+          fragment.appendChild(moveRow);
+        }
+
+        // Append the fragment to the history container
+        historyContainer.appendChild(fragment);
+      }
+
+      function handleDragStart(source, piece, position, orientation) {
+        if (chess.game_over()) {
+          return false;
+        }
+
+        if (
+          (orientation === "white" && piece.search(/^w/) === -1) ||
+          (orientation === "black" && piece.search(/^b/) === -1)
+        ) {
+          return false;
+        }
+      }
+
+      // Initialize Chess.js to manage game state
+
+      // Function to load the board from the provided FEN string
+
+      const roomName = JSON.parse(
+        document.getElementById("room-name").textContent
+      );
+
+      // WebSocket connection
+      const chatSocket = new WebSocket(
+        "ws://" + window.location.host + "/ws/chat/" + roomName + "/"
+      );
+
+      // Show loader until player joins
+      const loader = document.querySelector("#loader");
+      const chatInterface = document.querySelector("#chat-interface");
+
+      chatSocket.onmessage = function (e) {
+        const data = JSON.parse(e.data);
+
+        // If we receive a notification, hide the loader and show the chat interface
+        if (data.type === "multi_game_connect") {
+          if (data.size === 1) {
+            personalColor = "white";
+          }
+          if (data.size === 2 && data.yourself === true) {
+            personalColor = "black";
+          }
+
+          if (data.size === 2) {
+            startGame();
+
+            chatInterface.style.display = "block"; // Show the chat interface
+            board.orientation(personalColor);
+          }
+
+          if (data.yourself === false) {
+            Toastify({
+              text: data.body, // The message from the server (e.g., "Player joined!")
+              duration: 3000, // Display for 3 seconds
+              gravity: "bottom", // Position at the top of the page
+              position: "right", // Align to the right
+              //backgroundColor: "linear-gradient(to right, #00b09b, #96c93d)", // Custom style
+            }).showToast();
+          }
+        }
+
+        if (data.type === "multi_game_make_move") {
+          source = data.body["source"];
+          target = data.body["target"];
+          const move = chess.move({ from: source, to: target, promotion: "q" });
+          board.position(chess.fen());
+          addChessHistory();
+          if (!timerInterval && move.color === "w") {
+            startTimer();
+          }
+          switchPlayer();
+        }
+
+        if (data.type === "multi_game_chat_message") {
+          // Display messages in the chat log
+          addChatMessage(data);
+        }
+
+        if (data.type == "multi_game_over") {
+          Toastify({
+            text: data.body, // The message from the server (e.g., "Player joined!")
+            duration: 5000, // Display for 3 seconds
+            gravity: "center", // Position at the top of the page
+            position: "center", // Align to the right
+            //backgroundColor: "linear-gradient(to right, #00b09b, #96c93d)", // Custom style
+          }).showToast();
+        }
+      };
+
+      chatSocket.onclose = function (e) {
+        console.error("Chat socket closed unexpectedly");
+      };
+
+      // Message input handling
+      document.querySelector("#chat-message-input").focus();
+      document.querySelector("#chat-message-input").onkeyup = function (e) {
+        if (e.key === "Enter") {
+          // Trigger send on 'Enter' key
+          document.querySelector("#chat-message-submit").click();
+        }
+      };
+
+      document.querySelector("#chat-message-submit").onclick = function (e) {
+        const messageInputDom = document.querySelector("#chat-message-input");
+        const message = messageInputDom.value;
+        chatSocket.send(
+          JSON.stringify({
+            type: "multi.game.chat.message",
+            body: message,
+          })
+        );
+        messageInputDom.value = ""; // Clear input field after sending
+      };
+    </script>
+  </body>
+</html>
