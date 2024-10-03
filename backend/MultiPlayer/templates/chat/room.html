@@ -522,6 +522,9 @@
           if (!timerInterval && move.color === "w") {
             startTimer();
           }
+          if (chess.game_over()) {
+            clearInterval(timerInterval);
+          }
           switchPlayer();
         }
 
