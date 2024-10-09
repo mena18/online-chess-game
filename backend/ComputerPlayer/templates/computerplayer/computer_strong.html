@@ -275,7 +275,7 @@
           const fenEncoded = encodeURIComponent(fen);
 
           const response = await fetch(
-            `/AiGame/Strong/best_move/?fen=${fenEncoded}/`
+            `/computerplayer/Strong/best_move/?fen=${fenEncoded}/`
           );
           if (!response.ok) {
             throw new Error("Network response was not ok");

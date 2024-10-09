@@ -34,6 +34,7 @@ ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS = [
     "daphne",
     "channels",
+    "Chess",
     "MultiPlayer",
     "django.contrib.admin",
     "django.contrib.auth",
