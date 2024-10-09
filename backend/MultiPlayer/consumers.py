@@ -1,16 +1,10 @@
 # chat/consumers.py
 import json
 
-from asgiref.sync import async_to_sync
-from channels.generic.websocket import WebsocketConsumer
+# from asgiref.sync import async_to_sync
+from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 active_rooms = {}
-
-
-class User:
-    def __init__(self, username, color):
-        self.username = username
-        self.color = color
 
 
 class Event:
@@ -22,10 +16,11 @@ class Event:
         self.body = d["body"]
 
 
-class ChatConsumer(WebsocketConsumer):
-    def connect(self):
+class MultiPlayerGameConsumer(AsyncJsonWebsocketConsumer):
+    async def connect(self):
+
         self.room_name = self.scope["url_route"]["kwargs"]["room_name"]
-        self.room_group_name = f"chat_{self.room_name}"
+        self.room_group_name = f"MultiPlayerGame_{self.room_name}"
 
         if self.room_group_name not in active_rooms:
             active_rooms[self.room_group_name] = set()
@@ -33,14 +28,12 @@ class ChatConsumer(WebsocketConsumer):
         active_rooms[self.room_group_name].add(self.channel_name)
 
         # Join room group
-        async_to_sync(self.channel_layer.group_add)(
-            self.room_group_name, self.channel_name
-        )
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
 
-        self.accept()
+        await self.accept()
 
         size = len(active_rooms[self.room_group_name])
-        async_to_sync(self.channel_layer.group_send)(
+        await self.channel_layer.group_send(
             self.room_group_name,
             {
                 "type": "multi.game.connect",
@@ -53,12 +46,10 @@ class ChatConsumer(WebsocketConsumer):
             },
         )
 
-    def disconnect(self, close_code):
+    async def disconnect(self, close_code):
         # Leave room group
 
-        async_to_sync(self.channel_layer.group_discard)(
-            self.room_group_name, self.channel_name
-        )
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
         # Remove the current user's channel from the group's set of active users
         if self.channel_name in active_rooms[self.room_group_name]:
@@ -68,7 +59,7 @@ class ChatConsumer(WebsocketConsumer):
         if not active_rooms[self.room_group_name]:
             del active_rooms[self.room_group_name]
 
-        async_to_sync(self.channel_layer.group_send)(
+        await self.channel_layer.group_send(
             self.room_group_name,
             {
                 "type": "multi.game.connect",
@@ -82,24 +73,24 @@ class ChatConsumer(WebsocketConsumer):
         )
 
     # Receive message from WebSocket
-    def receive(self, text_data):
+    async def receive(self, text_data):
         text_data_json = json.loads(text_data)
         body = text_data_json["body"]
         type = text_data_json["type"]
 
         # Send message to room group
-        async_to_sync(self.channel_layer.group_send)(
+        await self.channel_layer.group_send(
             self.room_group_name,
             {"type": type, "sender_channel_name": self.channel_name, "body": body},
         )
 
     # Receive message from room group
 
-    def multi_game_connect(self, event):
+    async def multi_game_connect(self, event):
 
         event = Event(event)
 
-        self.send(
+        await self.send(
             text_data=json.dumps(
                 {
                     "body": event.body["message"],
@@ -110,11 +101,11 @@ class ChatConsumer(WebsocketConsumer):
             )
         )
 
-    def multi_game_make_move(self, event):
+    async def multi_game_make_move(self, event):
 
         event = Event(event)
         if event.sender_channel_name != self.channel_name:
-            self.send(
+            await self.send(
                 text_data=json.dumps(
                     {
                         "body": event.body,
@@ -124,10 +115,10 @@ class ChatConsumer(WebsocketConsumer):
                 )
             )
 
-    def multi_game_chat_message(self, event):
+    async def multi_game_chat_message(self, event):
         event = Event(event)
 
-        self.send(
+        await self.send(
             text_data=json.dumps(
                 {
                     "message": event.body,
@@ -137,10 +128,10 @@ class ChatConsumer(WebsocketConsumer):
             )
         )
 
-    def multi_game_over(self, event):
+    async def multi_game_over(self, event):
         event = Event(event)
 
-        self.send(
+        await self.send(
             text_data=json.dumps(
                 {
                     "body": event.body,
