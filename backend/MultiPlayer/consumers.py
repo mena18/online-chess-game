@@ -3,8 +3,7 @@ import json
 
 # from asgiref.sync import async_to_sync
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-
-active_rooms = {}
+from .lib import ChessGameCreator
 
 
 class Event:
@@ -20,28 +19,25 @@ class MultiPlayerGameConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
 
         self.room_name = self.scope["url_route"]["kwargs"]["room_name"]
+        self.player_id = self.scope["url_route"]["kwargs"]["player_id"]
+
         self.room_group_name = f"MultiPlayerGame_{self.room_name}"
-
-        if self.room_group_name not in active_rooms:
-            active_rooms[self.room_group_name] = set()
-
-        active_rooms[self.room_group_name].add(self.channel_name)
+        self.chessGame = ChessGameCreator.create(self.room_name)
+        print("\n\n\n")
+        print(self.chessGame.get_game_info(self.player_id)["game_fen"])
+        print("\n\n\n")
+        self.chessGame.set_player_color(self.player_id)
 
         # Join room group
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
 
         await self.accept()
 
-        size = len(active_rooms[self.room_group_name])
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "multi.game.connect",
-                "body": {
-                    "message": "User Entered The Chat",
-                    "size": size,
-                    "personal_color": "white" if size % 2 == 0 else "black",
-                },
+                "type": "player.joined",
+                "body": {},
                 "sender_channel_name": self.channel_name,
             },
         )
@@ -51,22 +47,22 @@ class MultiPlayerGameConsumer(AsyncJsonWebsocketConsumer):
 
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
-        # Remove the current user's channel from the group's set of active users
-        if self.channel_name in active_rooms[self.room_group_name]:
-            active_rooms[self.room_group_name].remove(self.channel_name)
+        if self.player_id == self.chessGame.white_id:
+            self.chessGame.white_id = ""
+        elif self.player_id == self.chessGame.black_id:
+            self.chessGame.black_id = ""
 
-        # If the group is empty, remove it from the dictionary
-        if not active_rooms[self.room_group_name]:
-            del active_rooms[self.room_group_name]
+        if self.chessGame.get_players_num() == 0:
+            ChessGameCreator.delete(self.room_name)
+            return
 
         await self.channel_layer.group_send(
             self.room_group_name,
             {
-                "type": "multi.game.connect",
+                "type": "player.joined",
                 "body": {
                     "message": "User Left The Chat",
-                    "size": len(active_rooms.get(self.room_group_name, [])),
-                    "personal_color": "",
+                    "game_info": self.chessGame.get_game_info(self.player_id),
                 },
                 "sender_channel_name": self.channel_name,
             },
@@ -78,6 +74,22 @@ class MultiPlayerGameConsumer(AsyncJsonWebsocketConsumer):
         body = text_data_json["body"]
         type = text_data_json["type"]
 
+        if type == "multi.game.make.move":
+            print("Before make move\n\n\n")
+            print(self.chessGame.get_game_info(self.player_id)["game_fen"])
+            print("\n\n\n")
+
+            self.chessGame.FEN = body["fen"]
+            self.chessGame.turn = body["turn"]
+            self.chessGame.white_time = body["white_time"]
+            self.chessGame.black_time = body["black_time"]
+
+            body["game_info"] = self.chessGame.get_game_info(self.player_id)
+
+            print("After make move\n\n\n")
+            print(self.chessGame.get_game_info(self.player_id)["game_fen"])
+            print("\n\n\n")
+
         # Send message to room group
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -86,16 +98,15 @@ class MultiPlayerGameConsumer(AsyncJsonWebsocketConsumer):
 
     # Receive message from room group
 
-    async def multi_game_connect(self, event):
+    async def player_joined(self, event):
 
         event = Event(event)
 
         await self.send(
             text_data=json.dumps(
                 {
-                    "body": event.body["message"],
-                    "type": "multi_game_connect",
-                    "size": event.body["size"],
+                    "body": self.chessGame.get_game_info(self.player_id),
+                    "type": "player_joined",
                     "yourself": event.sender_channel_name == self.channel_name,
                 }
             )

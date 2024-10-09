@@ -201,8 +201,34 @@
 
     <!-- Chess.js for FEN parsing and chess logic -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-
     <script>
+      function generateRandomId(length) {
+        const characters =
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let result = "";
+        for (let i = 0; i < length; i++) {
+          result += characters.charAt(
+            Math.floor(Math.random() * characters.length)
+          );
+        }
+        return result;
+      }
+
+      function getPlayerId() {
+        let playerId = localStorage.getItem("player_id");
+
+        // If player_id does not exist in localStorage, generate and store a new one
+        if (!playerId) {
+          playerId = generateRandomId(20);
+          localStorage.setItem("player_id", playerId);
+        }
+
+        return playerId;
+      }
+    </script>
+    <script>
+      const playerId = getPlayerId();
+
       const pieceThemePath = "{% static 'img/chesspieces/' %}";
       let personalColor = "";
       const whiteSquareGrey = "#a9a9a9";
@@ -359,16 +385,21 @@
           startTimer();
         }
 
+        switchPlayer();
         chatSocket.send(
           JSON.stringify({
             type: "multi.game.make.move",
             body: {
               source: source,
               target: target,
+              fen: chess.fen(),
+              turn: currentPlayer,
+              white_time: whiteTime,
+              black_time: blackTime,
             },
           })
         );
-        switchPlayer();
+
         addChessHistory();
 
         if (chess.game_over()) {
@@ -476,7 +507,13 @@
 
       // WebSocket connection
       const chatSocket = new WebSocket(
-        "ws://" + window.location.host + "/ws/MultiPlayerGame/" + roomName + "/"
+        "ws://" +
+          window.location.host +
+          "/ws/MultiPlayerGame/" +
+          roomName +
+          "/" +
+          playerId +
+          "/"
       );
 
       // Show loader until player joins
@@ -487,19 +524,20 @@
         const data = JSON.parse(e.data);
 
         // If we receive a notification, hide the loader and show the chat interface
-        if (data.type === "multi_game_connect") {
-          if (data.size === 1) {
-            personalColor = "white";
-          }
-          if (data.size === 2 && data.yourself === true) {
-            personalColor = "black";
-          }
+        if (data.type === "player_joined") {
+          console.log(data);
+          personalColor = data.body.personal_color;
+          currentPlayer = data.body.turn;
+          whiteTime = data.body.white_time;
+          blackTime = data.body.black_time;
 
-          if (data.size === 2) {
+          if (data.body.size === 2) {
             startGame();
 
             chatInterface.style.display = "block"; // Show the chat interface
             board.orientation(personalColor);
+            chess.load(data.body.game_fen);
+            board.position(chess.fen());
           }
 
           if (data.yourself === false) {
@@ -514,6 +552,7 @@
         }
 
         if (data.type === "multi_game_make_move") {
+          console.log(data);
           source = data.body["source"];
           target = data.body["target"];
           const move = chess.move({ from: source, to: target, promotion: "q" });

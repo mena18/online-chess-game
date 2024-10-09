@@ -91,7 +91,7 @@
       document.querySelector("#create-room").onclick = function () {
         var randomRoomName = generateRandomRoomName();
         // Redirect to the randomly generated room
-        window.location.pathname = "/multiPlayer/" + randomRoomName + "/";
+        window.location.pathname = "/multiplayer/" + randomRoomName + "/";
       };
 
       // Join room button click handler
@@ -99,7 +99,7 @@
         var roomName = document.querySelector("#room-name-input").value;
         if (roomName.trim()) {
           // Redirect to the user-entered room
-          window.location.pathname = "/multiPlayer/" + roomName + "/";
+          window.location.pathname = "/multiplayer/" + roomName + "/";
         } else {
           alert("Please enter a valid room name.");
         }
